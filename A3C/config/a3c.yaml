@@ -1,0 +1,21 @@
+hyperparameters:
+  t_max: 20              # rollout length for each worker before update
+  max_episodes: 10000   # total episodes to run across workers
+  gamma: 0.99            # discount factor
+  entropy_coef: 0.01     # entropy bonus coefficient
+  value_loss_coef: 0.5   # value loss coefficient
+  lr: 2.0e-4             # learning rate
+  num_workers: 4      # number of parallel worker processes
+  grad_clip: 40.0        # gradient clipping threshold
+
+network:
+  state_size: [40, 40]   # height, width of processed image
+  shared_layers: [128, 64]
+  critic_hidden_layers: [64]
+  actor_hidden_layers: [64]
+  init_type: "xavier-uniform"
+
+logging:
+  log_interval: 10       # episodes between logging
+  save_interval: 1000     # episodes between model saving
+  model_dir: "models" 

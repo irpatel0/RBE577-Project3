@@ -1,0 +1,17 @@
+{
+  "env_id": "LunarLander-v2",
+  "algorithm": "a2c", 
+  "plot_filename": "reward_history.png",
+  "checkpoint_path": "checkpoints/lunar_lander_actor.pt",
+  "num_test_episodes": 3,
+  "value_loss_coef": 0.5,
+  "grad_norm_clip": 0.5,
+  "actor_lr": 0.0001,
+  "critic_lr": 0.0003,
+  "gamma": 0.9,
+  "hidden_dim": 256,
+  "num_episodes": 5000,
+  "max_ep_steps": 1000,
+  "reward_ma_window": 10,
+  "random_seed": 42
+}

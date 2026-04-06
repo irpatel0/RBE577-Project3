@@ -1,0 +1,21 @@
+# Common configuration parameters
+env:
+  name: "KukaDiverseObjectEnv"
+  renders: true  # Will be overridden for workers
+  isDiscrete: false
+  removeHeightHack: false
+  maxSteps: 20
+  obs_width: 128
+  obs_height: 128
+
+camera:
+  distance: 1.2
+  yaw: 45
+  pitch: -30
+  target_pos: [0.5, 0, 0]
+  fov: 60
+  aspect: 1.0
+  nearVal: 0.1
+  farVal: 100.0
+
+device: "cuda"  # Will fall back to CPU if CUDA not available 
