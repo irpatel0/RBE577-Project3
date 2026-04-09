@@ -16,10 +16,18 @@ def build_global_model(config, device):
     # TODO: Build the shared global actor-critic network
     # Hint: The global model should use the same architecture as each worker's
     # local model, but this instance must also be prepared for parameter sharing.
-    model = None  # Replace with your implementation
+    model = ActorCritic(
+        state_size=config["network"]["state_size"],
+        action_size=get_kuka_action_dim(config),
+        shared_layers=config["network"]["shared_layers"],
+        critic_hidden_layers=config["network"]["critic_hidden_layers"],
+        actor_hidden_layers=config["network"]["actor_hidden_layers"],
+        init_type=config["network"]["init_type"],
+        seed=0 
+    ).to(device)
 
     # TODO: Move the global model parameters into shared memory
-    pass  # Replace with your implementation
+    model.share_memory()
 
     return model
 
@@ -47,17 +55,21 @@ def train_a3c():
 
     # TODO: Set up PyTorch multiprocessing before workers are launched
     # Hint: Use the start method expected by the shared-memory A3C setup.
-    pass  # Replace with your implementation
+    mp.set_start_method("spawn", force=True)
 
     # TODO: Create the shared training objects used by all workers
 
     # interval statistics for logging.
-    global_net = None  # Replace with your implementation
-    optimizer = None  # Replace with your implementation
-    global_ep = None  # Replace with your implementation
-    lock = None  # Replace with your implementation
-    manager = None  # Replace with your implementation
-    shared_stats = None  # Replace with your implementation
+    global_net = build_global_model(config, device)
+    optimizer = SharedAdam(
+        global_net.parameters(), 
+        lr=config["hyperparameters"]["lr"]
+    )
+    optimizer.share_memory()
+    global_ep = mp.Value("i", 0)
+    lock = mp.Lock()
+    manager = mp.Manager()
+    shared_stats = manager.dict()
 
     os.makedirs(config["logging"]["model_dir"], exist_ok=True)
 
@@ -69,15 +81,33 @@ def train_a3c():
     processes = []
     for worker_id in range(config["hyperparameters"]["num_workers"]):
         # TODO: Launch one worker process for each worker id
-        p = None  # Replace with your implementation
+        p = mp.Process(
+            target=worker_process,
+            args=(
+                worker_id,
+                global_net,
+                optimizer,
+                global_ep,
+                config["hyperparameters"]["max_episodes"],
+                lock,
+                config,
+                device,
+                shared_stats,
+                logger.log_path
+            ),
+        )
 
         # TODO: Start the worker and keep track of the process handle
-        pass  # Replace with your implementation
+        p.start()
+        processes.append(p)
 
     # TODO: Wait for all worker processes to finish
-    pass  # Replace with your implementation
+    for p in processes:
+        p.join()
 
     # TODO: Save the final checkpoint and clean up shared manager resources
-    model_path = None  # Replace with your implementation
+    model_path = save_final_checkpoint(global_net, optimizer, config)
+    manager.shutdown()
+
     logger.info(f"Final model saved to {model_path}. Training complete!")
     logger.close()
