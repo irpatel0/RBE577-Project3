@@ -27,7 +27,7 @@ def parse_args():
     parser.add_argument(
         "--success-threshold",
         type=float,
-        default=0.5,
+        default=0.25,
         help="Episode reward threshold to count success",
     )
     parser.add_argument(
@@ -191,7 +191,7 @@ if __name__ == "__main__":
     set_seed(args.seed)
 
     headless = not args.render
-    config = load_config(headless=headless)
+    config = load_config()
 
     if args.device is not None:
         config["device"] = args.device

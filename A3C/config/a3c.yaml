@@ -5,7 +5,7 @@ hyperparameters:
   entropy_coef: 0.01     # entropy bonus coefficient
   value_loss_coef: 0.5   # value loss coefficient
   lr: 2.0e-4             # learning rate
-  num_workers: 4      # number of parallel worker processes
+  num_workers: 10      # number of parallel worker processes
   grad_clip: 40.0        # gradient clipping threshold
 
 network:

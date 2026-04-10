@@ -102,7 +102,7 @@ def worker_process(
 
             action = dist.sample()
             log_prob = dist.log_prob(action)
-            entropy = dist.entropy()
+            entropy = -log_prob
             action_np = action.squeeze(0).cpu().numpy()
 
             # TODO: Step the environment and preprocess the next observation
@@ -171,11 +171,17 @@ def worker_process(
             metrics.add_episode_length(episode_steps)
 
             # TODO: Update the shared episode counter and logging stats
-            emit_log(
-                f"Worker {worker_id} | Ep {current_ep}/{max_episodes} | "
-                f"Reward: {episode_reward:.2f} | Loss: {total_loss_value:.4f}",
-                log_path
-            )  
+
+            with lock:
+                global_ep.value += 1
+                current_ep = global_ep.value
+
+            if current_ep % log_interval == 0 or current_ep == max_episodes:
+                emit_log(
+                    f"Worker {worker_id} | Ep {current_ep}/{max_episodes} | "
+                    f"Reward: {episode_reward:.2f} | Loss: {total_loss_value:.4f}",
+                    log_path
+                )  
 
             env.reset()
             setup_camera(env, config)

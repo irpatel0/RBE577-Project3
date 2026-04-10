@@ -11,16 +11,16 @@ class SharedAdam(optim.Adam):
                 if param is None:
                     continue
 
-                state = None  # Replace with your implementation
+                state = self.state[param]
 
                 # TODO: Create the step counter tensor
-                state["step"] = None  # Replace with your implementation
+                state["step"] = torch.zeros(1)
 
                 # TODO: Create Adam's first-moment buffer
-                state["exp_avg"] = None  # Replace with your implementation
+                state["exp_avg"] = torch.zeros_like(param.data)
 
                 # TODO: Create Adam's second-moment buffer
-                state["exp_avg_sq"] = None  # Replace with your implementation
+                state["exp_avg_sq"] = torch.zeros_like(param.data)
 
     def share_memory(self):
         """Move optimizer state to shared memory when supported by the device."""
@@ -29,20 +29,21 @@ class SharedAdam(optim.Adam):
         # attempt to share tensors that support shared-memory transfer.
         for group in self.param_groups:
             for param in group["params"]:
-                state = None  # Replace with your implementation
+                state = self.state[param]
                 if not state:
                     continue
 
                 for key in ("step", "exp_avg", "exp_avg_sq"):
-                    value = None  # Replace with your implementation
+                    value = state.get(key)
 
                     # TODO: Skip entries that cannot be shared
                     # Hint: Some state entries may be missing or may not expose the method
                     # needed for shared-memory transfer.
-                    pass  # Replace with your implementation
+                    if value is None or not hasattr(value, "share_memory_"):
+                        continue
 
                     # TODO: Share CPU state tensors across processes
                     # Hint: The shared-parameter A3C setup is designed around CPU shared memory.
-                    pass  # Replace with your implementation
+                    value.share_memory_()
 
         return self
