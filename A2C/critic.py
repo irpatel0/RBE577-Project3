@@ -7,9 +7,15 @@ class Critic(nn.Module):
         # TODO: Build the value network
         # Hint: This network should take a state and return a single scalar estimate
         # describing how good that state is under the current policy.
-        self.nn = None  # Replace with your implementation
+        self.nn = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )  # Replace with your implementation
 
     def forward(self, state):
         # TODO: Predict the value of the input state
         # Hint: The forward pass should delegate to the network defined above.
-        return None  # Replace with your implementation
+        return self.nn(state).squeeze(-1)  # Replace with your implementation
