@@ -46,7 +46,8 @@ def run_lunar_lander(actor=None, video_filename="lunar_lander_example.mp4", conf
             action = env.action_space.sample()
         else:
             normalized_state = normalize_observation(state, obs_normalizer)
-            state_tensor = torch.tensor(normalized_state, dtype=torch.float32)
+            model_device = next(actor.parameters()).device
+            state_tensor = torch.tensor(normalized_state, dtype=torch.float32, device=model_device)
             action = actor.get_action(state_tensor, deterministic=True)
 
         state, reward, terminated, truncated, _ = step_env(env, action)
@@ -72,6 +73,9 @@ def train_actor_critic(config_path=None, plot=True):
     config = load_config(config_path) if config_path else load_config()
     set_random_seed(config["random_seed"])
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Using device:", device)
+
     env = make_env(config["env_id"])
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
@@ -88,21 +92,30 @@ def train_actor_critic(config_path=None, plot=True):
     print("action dim: ", action_dim)
     print("algorithm: ", algorithm)
 
-    actor = Actor(state_dim, action_dim, config["hidden_dim"])
-    critic = Critic(state_dim, config["hidden_dim"]) if use_a2c else None
+    actor = Actor(state_dim, action_dim, config["hidden_dim"]).to(device)
+    critic = Critic(state_dim, config["hidden_dim"]).to(device) if use_a2c else None
     #This helps training
     obs_normalizer = ObservationNormalizer(state_dim)
     actor.obs_normalizer = obs_normalizer
+
+    print("Actor device:", next(actor.parameters()).device)
+    if critic is not None:
+        print("Critic device:", next(critic.parameters()).device)
 
     actor_optim = optim.Adam(actor.parameters(), lr=config["actor_lr"])
     critic_optim = (optim.Adam(critic.parameters(), lr=config["critic_lr"]) if use_a2c else None)
 
     reward_history = np.zeros(config["num_episodes"])
+    best_reward = -np.inf
 
     for i_episode in range(config["num_episodes"]):
         raw_state = reset_env(env, seed=config["random_seed"] if i_episode == 0 else None)
         obs_normalizer.update(raw_state)
-        state = torch.tensor(normalize_observation(raw_state, obs_normalizer), dtype=torch.float32)
+        state = torch.tensor(
+            normalize_observation(raw_state, obs_normalizer),
+            dtype=torch.float32,
+            device=device,
+        )
         episode_reward = 0.0
         episode_states = []
         episode_actions = []
@@ -116,39 +129,108 @@ def train_actor_critic(config_path=None, plot=True):
             # Hint: This block should choose an action from the actor, step the environment,
             # update the observation statistics, and save the information needed later
             # to build returns and losses.
-            pass  # Replace with your implementation
+            action = actor.get_action(state)
+            next_raw_state, reward, episode_terminated, episode_truncated, _ = step_env(env, action)
+            obs_normalizer.update(next_raw_state)
+            next_state = torch.tensor(
+                normalize_observation(next_raw_state, obs_normalizer),
+                dtype=torch.float32,
+                device=device,
+            )
+
+            episode_states.append(state)
+            episode_actions.append(action)
+            episode_rewards.append(reward)
+
+            state = next_state
+            episode_reward += reward
+
+            if episode_terminated or episode_truncated:
+                break  # Replace with your implementation
 
 
         # TODO: Convert the collected episode data into batched tensors
-        state_batch = None  # Replace with your implementation
-        action_batch = None  # Replace with your implementation
+        state_batch = torch.stack(episode_states).to(device)  # Replace with your implementation
+        action_batch = torch.tensor(episode_actions, dtype=torch.long, device=device)  # Replace with your implementation
 
-        # Hint: Use the stored rewards together with gamma 
-        return_batch = None  # Replace with your implementation
+        # Hint: Use the stored rewards together with gamma
+        return_batch = compute_discounted_returns(
+            episode_rewards, config["gamma"]
+        ).to(device)  # Replace with your implementation
 
         # TODO: Evaluate the log-probabilities of the actions that were actually taken
         # Hint: The actor helper for this expects the batched states and chosen actions.
-        chosen_log_probs, _ = None  # Replace with your implementation
+        chosen_log_probs, _ = actor.evaluate_actions(
+            state_batch, action_batch
+        )  # Replace with your implementation
 
         # TODO: Clear any stale actor gradients before backpropagation
         # Hint: Optimizers in PyTorch accumulate gradients unless you reset them.
-        pass  # Replace with your implementation
+        actor_optim.zero_grad()
+        if use_a2c:
+            critic_optim.zero_grad()  # Replace with your implementation
 
 
         if use_reinforce: #this is the REINFORCE case where we don't use a critic, so the advantage is just the return
             print("Using REINFORCE")
             # TODO: Implement the policy-gradient update for REINFORCE
-            pass  # Replace with your implementation
+            actor_loss = compute_actor_loss(chosen_log_probs, return_batch)
+            actor_loss.backward()  # Replace with your implementation
 
         elif use_a2c:#This is the critic case where we compute the advantage using the critic's value estimates, and use that to compute the actor loss, and also compute the critic loss and backprop through both
             print("Using A2C")
             # TODO: Implement the actor-critic update
             # Hint: This branch should involve the critic's value estimates, an advantage term,
             # and a combined loss that updates both networks.
-            pass  # Replace with your implementation
+            value_batch = critic(state_batch)
+            advantage_batch = compute_advantage(return_batch, value_batch)
+            advantage_batch = normalize_advantage(advantage_batch)
+
+            actor_loss = compute_actor_loss(chosen_log_probs, advantage_batch)
+            critic_loss = compute_critic_loss(return_batch, value_batch)
+
+            total_loss = actor_loss + config["value_loss_coef"] * critic_loss
+            total_loss.backward()  # Replace with your implementation
 
 
-     #TODO: Implement the optimizer step to update the parameters of the actor and critic (if using A2C)
+        #TODO: Implement the optimizer step to update the parameters of the actor and critic (if using A2C)
+        if config.get("grad_norm_clip", None) is not None:
+            nn.utils.clip_grad_norm_(actor.parameters(), config["grad_norm_clip"])
+            if use_a2c:
+                nn.utils.clip_grad_norm_(critic.parameters(), config["grad_norm_clip"])
+
+        actor_optim.step()
+        if use_a2c:
+            critic_optim.step()
+
+        reward_history[i_episode] = episode_reward
+
+        if episode_reward > best_reward:
+            best_reward = episode_reward
+            checkpoint_path = config["checkpoint_path"]
+            checkpoint_dir = os.path.dirname(checkpoint_path)
+            if checkpoint_dir:
+                os.makedirs(checkpoint_dir, exist_ok=True)
+            torch.save(
+                {
+                    "actor_state_dict": actor.state_dict(),
+                    "obs_normalizer_state": obs_normalizer.state_dict(),
+                    "state_dim": state_dim,
+                    "action_dim": action_dim,
+                    "hidden_dim": config["hidden_dim"],
+                    "config": config,
+                },
+                checkpoint_path,
+            )
+
+        if (i_episode + 1) % 10 == 0:
+            recent_mean = reward_history[max(0, i_episode - 9): i_episode + 1].mean()
+            print(
+                f"Episode {i_episode + 1}/{config['num_episodes']} | "
+                f"reward={episode_reward:.2f} | "
+                f"recent_mean={recent_mean:.2f} | "
+                f"best={best_reward:.2f}"
+            )
 
     if plot:
         plt.figure()
